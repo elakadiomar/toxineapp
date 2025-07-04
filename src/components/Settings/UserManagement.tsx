@@ -41,9 +41,9 @@ const UserManagement: React.FC = () => {
     }).then(() => {
       const notification = document.createElement('div');
       notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-      notification.textContent = 'Compte médecin créé avec succès !';
+      notification.textContent = `Compte créé ! Email: ${formData.email}, Mot de passe: medecin123`;
       document.body.appendChild(notification);
-      setTimeout(() => document.body.removeChild(notification), 3000);
+      setTimeout(() => document.body.removeChild(notification), 5000);
       
       // Reset form
       setFormData({
@@ -176,6 +176,9 @@ const UserManagement: React.FC = () => {
                     placeholder="Minimum 6 caractères"
                   />
                 </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Note: Le mot de passe par défaut sera "medecin123"
+                </p>
               </div>
 
               <div>
@@ -192,6 +195,9 @@ const UserManagement: React.FC = () => {
                     placeholder="Répéter le mot de passe"
                   />
                 </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Ce champ est ignoré - utilisez "medecin123" pour vous connecter
+                </p>
               </div>
 
               <div>
