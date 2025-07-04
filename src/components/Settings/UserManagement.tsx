@@ -17,12 +17,20 @@ const UserManagement: React.FC = () => {
     e.preventDefault();
     
     if (formData.password !== formData.confirmPassword) {
-      alert('Les mots de passe ne correspondent pas');
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      notification.textContent = 'Les mots de passe ne correspondent pas';
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
       return;
     }
 
     if (formData.password.length < 6) {
-      alert('Le mot de passe doit contenir au moins 6 caractères');
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      notification.textContent = 'Le mot de passe doit contenir au moins 6 caractères';
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
       return;
     }
 
@@ -30,17 +38,29 @@ const UserManagement: React.FC = () => {
       name: formData.name,
       email: formData.email,
       role: formData.role
+    }).then(() => {
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      notification.textContent = 'Compte médecin créé avec succès !';
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
+      
+      // Reset form
+      setFormData({
+        name: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+        role: 'doctor'
+      });
+      setShowNewUserForm(false);
+    }).catch(() => {
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      notification.textContent = 'Erreur lors de la création du compte';
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
     });
-
-    // Reset form
-    setFormData({
-      name: '',
-      email: '',
-      password: '',
-      confirmPassword: '',
-      role: 'doctor'
-    });
-    setShowNewUserForm(false);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
