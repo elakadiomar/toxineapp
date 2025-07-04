@@ -105,16 +105,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Create default users if they don't exist
   const createDefaultUsers = async () => {
     try {
+      // Wait a bit for Firebase to initialize
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       const defaultUsers = [
         {
           email: 'admin@medical.com',
-          password: 'defaultPassword123',
+          password: 'admin123',
           name: 'Dr. Admin',
           role: 'admin' as const
         },
         {
           email: 'doctor@medical.com', 
-          password: 'defaultPassword123',
+          password: 'doctor123',
           name: 'Dr. Martin',
           role: 'doctor' as const
         }
@@ -142,6 +145,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             });
             
             console.log(`Created default user: ${defaultUser.email}`);
+            
+            // Sign out immediately after creating the user
+            await signOut(auth);
           }
         } catch (error: any) {
           // If user already exists, that's fine
@@ -314,7 +320,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addUser = async (userData: Omit<User, 'id'>) => {
     try {
       // Create Firebase Auth user
-      const userCredential = await createUserWithEmailAndPassword(auth, userData.email, 'defaultPassword123');
+      const userCredential = await createUserWithEmailAndPassword(auth, userData.email, 'medecin123');
       const firebaseUser = userCredential.user;
       
       // Save user data to Firestore
@@ -324,10 +330,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
       
       await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
-      alert('Compte médecin créé avec succès ! Mot de passe par défaut: defaultPassword123');
+      
+      // Sign out the newly created user so current user stays logged in
+      await signOut(auth);
+      
     } catch (error) {
       console.error('Error creating user:', error);
-      alert('Erreur lors de la création du compte');
       throw error;
     }
   };
