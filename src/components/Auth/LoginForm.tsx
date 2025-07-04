@@ -107,10 +107,10 @@ const LoginForm: React.FC = () => {
             <div className="text-sm text-gray-600">
               <p>Comptes de démonstration :</p>
               <p className="mt-2">
-                <strong>Admin:</strong> admin@medical.com / admin123
+                <strong>Admin:</strong> admin@medical.com / defaultPassword123
               </p>
               <p>
-                <strong>Médecin:</strong> doctor@medical.com / doctor123
+                <strong>Médecin:</strong> doctor@medical.com / defaultPassword123
               </p>
             </div>
           </div>
