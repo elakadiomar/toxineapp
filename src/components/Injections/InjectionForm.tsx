@@ -93,19 +93,23 @@ const InjectionForm: React.FC<InjectionFormProps> = ({ onSuccess }) => {
       return;
     }
 
-    const injectionDate = new Date(`${formData.date}T${formData.time}`);
-    
-    await addInjection({
-      patientId: selectedPatient,
-      date: injectionDate.toISOString(),
-      product: formData.product,
-      muscles: injectedMuscles.filter(m => m.muscleId && m.dosage > 0),
-      guidanceType: formData.guidanceType,
-      postInjectionEvents: formData.postInjectionEvents,
-      notes: formData.notes,
-      doctorId: user?.id || '',
-      followUpDate: formData.followUpDate || undefined
-    });
+    const handleSubmit = async (formData: YourFormDataType) => {
+  const injectionDate = new Date(`${formData.date}T${formData.time}`);
+
+  await addInjection({
+    patientId: selectedPatient,
+    date: injectionDate.toISOString(),
+    product: formData.product,
+    muscles: injectedMuscles.filter(m => m.muscleId && m.dosage > 0),
+    guidanceType: formData.guidanceType,
+    postInjectionEvents: formData.postInjectionEvents,
+    notes: formData.notes,
+    doctorId: user?.id || '',
+    followUpDate: formData.followUpDate || undefined,
+  });
+
+  // optionally: show success, reset form, etc.
+};
 
     // Créer automatiquement un RDV de contrôle si une date est spécifiée
     if (formData.followUpDate) {
