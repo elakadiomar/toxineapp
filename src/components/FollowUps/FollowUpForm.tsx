@@ -48,7 +48,7 @@ const FollowUpForm: React.FC<FollowUpFormProps> = ({ onSuccess }) => {
     const followUpDate = new Date(`${formData.date}T${formData.time}`);
     
     // Add follow-up
-    await addFollowUp({
+    addFollowUp({
       patientId: selectedPatient,
       injectionId: selectedInjection,
       date: followUpDate.toISOString(),
@@ -56,47 +56,55 @@ const FollowUpForm: React.FC<FollowUpFormProps> = ({ onSuccess }) => {
       comments: formData.comments,
       nextAppointment: formData.nextAppointment || undefined,
       doctorId: user?.id || ''
-    });
-
-    // Add next appointment if scheduled
-    if (formData.nextAppointment && formData.nextAppointmentTime) {
-      const nextAppointmentDate = new Date(`${formData.nextAppointment}T${formData.nextAppointmentTime}`);
-      await addAppointment({
-        patientId: selectedPatient,
-        date: nextAppointmentDate.toISOString(),
-        type: 'injection',
-        location: 'service',
-        status: 'scheduled',
-        notes: 'RDV programmé suite au contrôle',
-        doctorId: user?.id || ''
+    }).then(() => {
+      // Add next appointment if scheduled
+      if (formData.nextAppointment && formData.nextAppointmentTime) {
+        const nextAppointmentDate = new Date(`${formData.nextAppointment}T${formData.nextAppointmentTime}`);
+        return addAppointment({
+          patientId: selectedPatient,
+          date: nextAppointmentDate.toISOString(),
+          type: 'injection',
+          location: 'service',
+          status: 'scheduled',
+          notes: 'RDV programmé suite au contrôle',
+          doctorId: user?.id || ''
+        });
+      }
+    }).then(() => {
+      // Reset form
+      setSelectedPatient('');
+      setSelectedInjection('');
+      setSearchTerm('');
+      setFormData({
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toTimeString().slice(0, 5),
+        objectiveAchieved: 'achieved',
+        comments: '',
+        nextAppointment: '',
+        nextAppointmentTime: ''
       });
-    }
-
-    // Reset form
-    setSelectedPatient('');
-    setSelectedInjection('');
-    setSearchTerm('');
-    setFormData({
-      date: new Date().toISOString().split('T')[0],
-      time: new Date().toTimeString().slice(0, 5),
-      objectiveAchieved: 'achieved',
-      comments: '',
-      nextAppointment: '',
-      nextAppointmentTime: ''
+      
+      // Notification de succès
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      notification.textContent = 'Contrôle enregistré avec succès !';
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
+      
+      // Rediriger vers la liste des contrôles
+      if (onSuccess) {
+        onSuccess();
+      }
+    }).catch((error) => {
+      console.error('Error saving follow-up:', error);
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      notification.textContent = 'Erreur lors de l\'enregistrement du contrôle';
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
     });
-    
-    // Notification de succès
-    const notification = document.createElement('div');
-    notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-    notification.textContent = 'Contrôle enregistré avec succès !';
-    document.body.appendChild(notification);
-    setTimeout(() => document.body.removeChild(notification), 3000);
-    
-    // Rediriger vers la liste des contrôles
-    if (onSuccess) {
-      onSuccess();
-    }
   };
+
 
   return (
     <div className="space-y-6">
