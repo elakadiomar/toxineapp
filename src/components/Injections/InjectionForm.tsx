@@ -93,63 +93,67 @@ const InjectionForm: React.FC<InjectionFormProps> = ({ onSuccess }) => {
       return;
     }
 
-    const handleSubmit = async (formData: YourFormDataType) => {
-  const injectionDate = new Date(`${formData.date}T${formData.time}`);
-
-  await addInjection({
-    patientId: selectedPatient,
-    date: injectionDate.toISOString(),
-    product: formData.product,
-    muscles: injectedMuscles.filter(m => m.muscleId && m.dosage > 0),
-    guidanceType: formData.guidanceType,
-    postInjectionEvents: formData.postInjectionEvents,
-    notes: formData.notes,
-    doctorId: user?.id || '',
-    followUpDate: formData.followUpDate || undefined,
-  });
-
-  // optionally: show success, reset form, etc.
-};
-
-    // Créer automatiquement un RDV de contrôle si une date est spécifiée
-    if (formData.followUpDate) {
-      await addAppointment({
-        patientId: selectedPatient,
-        date: new Date(`${formData.followUpDate}T10:00:00`).toISOString(),
-        type: 'followup',
-        location: 'service',
-        status: 'scheduled',
-        notes: 'Contrôle post-injection programmé automatiquement',
-        doctorId: user?.id || ''
+    const injectionDate = new Date(`${formData.date}T${formData.time}`);
+    
+    addInjection({
+      patientId: selectedPatient,
+      date: injectionDate.toISOString(),
+      product: formData.product,
+      muscles: injectedMuscles.filter(m => m.muscleId && m.dosage > 0),
+      guidanceType: formData.guidanceType,
+      postInjectionEvents: formData.postInjectionEvents,
+      notes: formData.notes,
+      doctorId: user?.id || '',
+      followUpDate: formData.followUpDate || undefined
+    }).then(() => {
+      // Créer automatiquement un RDV de contrôle si une date est spécifiée
+      if (formData.followUpDate) {
+        return addAppointment({
+          patientId: selectedPatient,
+          date: new Date(`${formData.followUpDate}T10:00:00`).toISOString(),
+          type: 'followup',
+          location: 'service',
+          status: 'scheduled',
+          notes: 'Contrôle post-injection programmé automatiquement',
+          doctorId: user?.id || ''
+        });
+      }
+    }).then(() => {
+      // Reset form
+      setSelectedPatient('');
+      setFormData({
+        date: new Date().toISOString().split('T')[0],
+        time: new Date().toTimeString().slice(0, 5),
+        product: '',
+        guidanceType: [],
+        postInjectionEvents: [],
+        notes: '',
+        followUpDate: ''
       });
-    }
-
-    // Reset form
-    setSelectedPatient('');
-    setFormData({
-      date: new Date().toISOString().split('T')[0],
-      time: new Date().toTimeString().slice(0, 5),
-      product: '',
-      guidanceType: [],
-      postInjectionEvents: [],
-      notes: '',
-      followUpDate: ''
+      setInjectedMuscles([]);
+      setSearchTerm('');
+      
+      // Notification de succès
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      notification.textContent = 'Injection enregistrée avec succès !';
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
+      
+      // Rediriger vers la liste des injections
+      if (onSuccess) {
+        onSuccess();
+      }
+    }).catch((error) => {
+      console.error('Error saving injection:', error);
+      const notification = document.createElement('div');
+      notification.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+      notification.textContent = 'Erreur lors de l\'enregistrement de l\'injection';
+      document.body.appendChild(notification);
+      setTimeout(() => document.body.removeChild(notification), 3000);
     });
-    setInjectedMuscles([]);
-    setSearchTerm('');
-    
-    // Notification de succès
-    const notification = document.createElement('div');
-    notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-    notification.textContent = 'Injection enregistrée avec succès !';
-    document.body.appendChild(notification);
-    setTimeout(() => document.body.removeChild(notification), 3000);
-    
-    // Rediriger vers la liste des injections
-    if (onSuccess) {
-      onSuccess();
-    }
   };
+
 
   const getTotalDosage = () => {
     return injectedMuscles.reduce((total, muscle) => total + (muscle.dosage || 0), 0);
