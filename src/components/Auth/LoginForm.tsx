@@ -109,15 +109,15 @@ const LoginForm: React.FC = () => {
               <p className="mt-2">
                 <strong className="text-blue-600">Admin:</strong> admin@medical.com
                 <br />
-                <span className="text-gray-500">Mot de passe: defaultPassword123</span>
+                <span className="text-gray-500">Mot de passe: admin123</span>
               </p>
               <p className="mt-2">
                 <strong className="text-green-600">Médecin:</strong> doctor@medical.com
                 <br />
-                <span className="text-gray-500">Mot de passe: defaultPassword123</span>
+                <span className="text-gray-500">Mot de passe: doctor123</span>
               </p>
               <p className="mt-3 text-xs text-gray-500">
-                Les comptes sont créés automatiquement au premier lancement
+                Les comptes de démonstration sont créés automatiquement
               </p>
             </div>
           </div>
