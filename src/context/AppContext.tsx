@@ -1,6 +1,24 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, Patient, Injection, FollowUp, Appointment, Configuration } from '../types';
-import * as firebaseService from '../services/firebaseService';
+import { 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  createUserWithEmailAndPassword 
+} from 'firebase/auth';
+import { 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  getDocs, 
+  query, 
+  where, 
+  onSnapshot,
+  setDoc 
+} from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
 
 interface AppContextType {
   user: User | null;
@@ -11,23 +29,24 @@ interface AppContextType {
   configuration: Configuration;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
-  addPatient: (patient: Omit<Patient, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updatePatient: (id: string, updates: Partial<Patient>) => void;
-  deletePatient: (id: string) => void;
-  addInjection: (injection: Omit<Injection, 'id'>) => void;
-  updateInjection: (id: string, updates: Partial<Injection>) => void;
-  addFollowUp: (followUp: Omit<FollowUp, 'id'>) => void;
-  addAppointment: (appointment: Omit<Appointment, 'id'>) => void;
-  updateAppointment: (id: string, updates: Partial<Appointment>) => void;
+  addPatient: (patient: Omit<Patient, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updatePatient: (id: string, updates: Partial<Patient>) => Promise<void>;
+  deletePatient: (id: string) => Promise<void>;
+  addInjection: (injection: Omit<Injection, 'id'>) => Promise<void>;
+  updateInjection: (id: string, updates: Partial<Injection>) => Promise<void>;
+  addFollowUp: (followUp: Omit<FollowUp, 'id'>) => Promise<void>;
+  addAppointment: (appointment: Omit<Appointment, 'id'>) => Promise<void>;
+  updateAppointment: (id: string, updates: Partial<Appointment>) => Promise<void>;
   updateConfiguration: (config: Partial<Configuration>) => void;
   getPatientsByDoctor: (doctorId: string) => Patient[];
-  addUser: (user: Omit<User, 'id'>) => void;
+  addUser: (user: Omit<User, 'id'>) => Promise<void>;
   getStats: () => {
     totalPatients: number;
     injectedPatients: number;
     waitingPatients: number;
     overdueAppointments: number;
   };
+  loading: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -46,6 +65,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [injections, setInjections] = useState<Injection[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
   const [configuration, setConfiguration] = useState<Configuration>({
     diagnoses: [
       'Dystonie cervicale',
@@ -80,135 +100,179 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     ]
   });
 
-  // Mock authentication
+  // Firebase Authentication
   const login = async (email: string, password: string): Promise<boolean> => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    if (email === 'admin@medical.com' && password === 'admin123') {
-      setUser({
-        id: '1',
-        email: 'admin@medical.com',
-        name: 'Dr. Admin',
-        role: 'admin'
-      });
-      return true;
-    }
-    
-    if (email === 'doctor@medical.com' && password === 'doctor123') {
-      setUser({
-        id: '2',
-        email: 'doctor@medical.com',
-        name: 'Dr. Martin',
-        role: 'doctor'
-      });
-      return true;
-    }
-    
-    return false;
-  };
-
-  const logout = () => {
-    setUser(null);
-  };
-
-  const addPatient = (patientData: Omit<Patient, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
-      const newPatient: Patient = {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = userCredential.user;
+      
+      // Get user data from Firestore
+      const userDoc = await getDocs(query(collection(db, 'users'), where('email', '==', email)));
+      if (!userDoc.empty) {
+        const userData = userDoc.docs[0].data() as User;
+        setUser({ ...userData, id: firebaseUser.uid });
+        return true;
+      } else {
+        // Create default user data if not exists
+        const defaultUser: User = {
+          id: firebaseUser.uid,
+          email: email,
+          name: email === 'admin@medical.com' ? 'Dr. Admin' : 'Dr. Martin',
+          role: email === 'admin@medical.com' ? 'admin' : 'doctor'
+        };
+        await setDoc(doc(db, 'users', firebaseUser.uid), defaultUser);
+        setUser(defaultUser);
+        return true;
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+      setPatients([]);
+      setInjections([]);
+      setFollowUps([]);
+      setAppointments([]);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  // Firebase CRUD operations
+  const addPatient = async (patientData: Omit<Patient, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      const newPatient: Omit<Patient, 'id'> = {
         ...patientData,
-        id: Date.now().toString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        cpaManaged: false // Nouveau champ pour gérer le CPA
+        cpaManaged: patientData.cpaManaged || false
       };
-      setPatients(prev => [...prev, newPatient]);
-      // firebaseService.addPatient(newPatient);
+      
+      const docRef = await addDoc(collection(db, 'patients'), newPatient);
+      const patientWithId: Patient = { ...newPatient, id: docRef.id };
+      setPatients(prev => [...prev, patientWithId]);
     } catch (error) {
       console.error('Error adding patient:', error);
+      throw error;
     }
   };
 
-  const updatePatient = (id: string, updates: Partial<Patient>) => {
+  const updatePatient = async (id: string, updates: Partial<Patient>) => {
     try {
+      const patientRef = doc(db, 'patients', id);
+      const updatedData = { ...updates, updatedAt: new Date().toISOString() };
+      await updateDoc(patientRef, updatedData);
+      
       setPatients(prev => 
         prev.map(patient => 
-          patient.id === id 
-            ? { ...patient, ...updates, updatedAt: new Date().toISOString() }
-            : patient
+          patient.id === id ? { ...patient, ...updatedData } : patient
         )
       );
-      // firebaseService.updatePatient(id, updates);
     } catch (error) {
       console.error('Error updating patient:', error);
+      throw error;
     }
   };
 
-  const deletePatient = (id: string) => {
+  const deletePatient = async (id: string) => {
     try {
+      await deleteDoc(doc(db, 'patients', id));
       setPatients(prev => prev.filter(patient => patient.id !== id));
-      // firebaseService.deletePatient(id);
     } catch (error) {
       console.error('Error deleting patient:', error);
+      throw error;
     }
   };
 
-  const addInjection = (injectionData: Omit<Injection, 'id'>) => {
+  const addInjection = async (injectionData: Omit<Injection, 'id'>) => {
     try {
-      const newInjection: Injection = {
-        ...injectionData,
-        id: Date.now().toString()
-      };
-      setInjections(prev => [...prev, newInjection]);
-      // firebaseService.addInjection(newInjection);
+      const docRef = await addDoc(collection(db, 'injections'), injectionData);
+      const injectionWithId: Injection = { ...injectionData, id: docRef.id };
+      setInjections(prev => [...prev, injectionWithId]);
     } catch (error) {
       console.error('Error adding injection:', error);
+      throw error;
     }
   };
 
-  const updateInjection = (id: string, updates: Partial<Injection>) => {
-    setInjections(prev => 
-      prev.map(injection => 
-        injection.id === id 
-          ? { ...injection, ...updates }
-          : injection
-      )
-    );
+  const updateInjection = async (id: string, updates: Partial<Injection>) => {
+    try {
+      const injectionRef = doc(db, 'injections', id);
+      await updateDoc(injectionRef, updates);
+      
+      setInjections(prev => 
+        prev.map(injection => 
+          injection.id === id ? { ...injection, ...updates } : injection
+        )
+      );
+    } catch (error) {
+      console.error('Error updating injection:', error);
+      throw error;
+    }
   };
 
-  const addFollowUp = (followUpData: Omit<FollowUp, 'id'>) => {
+  const addFollowUp = async (followUpData: Omit<FollowUp, 'id'>) => {
     try {
-      const newFollowUp: FollowUp = {
-        ...followUpData,
-        id: Date.now().toString()
-      };
-      setFollowUps(prev => [...prev, newFollowUp]);
-      // firebaseService.addFollowUp(newFollowUp);
+      const docRef = await addDoc(collection(db, 'followUps'), followUpData);
+      const followUpWithId: FollowUp = { ...followUpData, id: docRef.id };
+      setFollowUps(prev => [...prev, followUpWithId]);
     } catch (error) {
       console.error('Error adding follow-up:', error);
+      throw error;
     }
   };
 
-  const addAppointment = (appointmentData: Omit<Appointment, 'id'>) => {
+  const addAppointment = async (appointmentData: Omit<Appointment, 'id'>) => {
     try {
-      const newAppointment: Appointment = {
-        ...appointmentData,
-        id: Date.now().toString()
-      };
-      setAppointments(prev => [...prev, newAppointment]);
-      // firebaseService.addAppointment(newAppointment);
+      const docRef = await addDoc(collection(db, 'appointments'), appointmentData);
+      const appointmentWithId: Appointment = { ...appointmentData, id: docRef.id };
+      setAppointments(prev => [...prev, appointmentWithId]);
     } catch (error) {
       console.error('Error adding appointment:', error);
+      throw error;
     }
   };
 
-  const updateAppointment = (id: string, updates: Partial<Appointment>) => {
-    setAppointments(prev => 
-      prev.map(appointment => 
-        appointment.id === id 
-          ? { ...appointment, ...updates }
-          : appointment
-      )
-    );
+  const updateAppointment = async (id: string, updates: Partial<Appointment>) => {
+    try {
+      const appointmentRef = doc(db, 'appointments', id);
+      await updateDoc(appointmentRef, updates);
+      
+      setAppointments(prev => 
+        prev.map(appointment => 
+          appointment.id === id ? { ...appointment, ...updates } : appointment
+        )
+      );
+    } catch (error) {
+      console.error('Error updating appointment:', error);
+      throw error;
+    }
+  };
+
+  const addUser = async (userData: Omit<User, 'id'>) => {
+    try {
+      // Create Firebase Auth user
+      const userCredential = await createUserWithEmailAndPassword(auth, userData.email, 'defaultPassword123');
+      const firebaseUser = userCredential.user;
+      
+      // Save user data to Firestore
+      const newUser: User = {
+        ...userData,
+        id: firebaseUser.uid
+      };
+      
+      await setDoc(doc(db, 'users', firebaseUser.uid), newUser);
+      alert('Compte médecin créé avec succès ! Mot de passe par défaut: defaultPassword123');
+    } catch (error) {
+      console.error('Error creating user:', error);
+      alert('Erreur lors de la création du compte');
+      throw error;
+    }
   };
 
   const updateConfiguration = (config: Partial<Configuration>) => {
@@ -217,20 +281,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const getPatientsByDoctor = (doctorId: string) => {
     return patients.filter(patient => patient.doctorId === doctorId);
-  };
-
-  const addUser = (userData: Omit<User, 'id'>) => {
-    try {
-      const newUser: User = {
-        ...userData,
-        id: Date.now().toString()
-      };
-      // Ici vous pourriez ajouter l'utilisateur à Firebase Auth
-      console.log('New user created:', newUser);
-      alert('Compte médecin créé avec succès !');
-    } catch (error) {
-      console.error('Error creating user:', error);
-    }
   };
 
   const getStats = () => {
@@ -265,88 +315,117 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
   };
 
+  // Load data from Firebase when user changes
   useEffect(() => {
-    // Initialize with some sample data
-    const samplePatients: Patient[] = [
-      {
-        id: '1',
-        firstName: 'Marie',
-        lastName: 'Dubois',
-        dateOfBirth: '1975-05-15',
-        gender: 'female',
-        diagnosis: 'Dystonie cervicale',
-        problem: 'Torticolis spasmodique',
-        referringDoctor: 'Dr. Laurent',
-        sedationRequired: false,
-        cpaManaged: false,
-        injectionObjective: 'Réduction des spasmes cervicaux',
-        doctorId: '2',
-        createdAt: '2024-01-15T10:00:00Z',
-        updatedAt: '2024-01-15T10:00:00Z'
-      },
-      {
-        id: '2',
-        firstName: 'Jean',
-        lastName: 'Martin',
-        dateOfBirth: '1962-08-22',
-        gender: 'male',
-        diagnosis: 'Spasticité post-AVC',
-        problem: 'Spasticité membre supérieur droit',
-        referringDoctor: 'Dr. Moreau',
-        sedationRequired: true,
-        cpaManaged: true,
-        injectionObjective: 'Amélioration mobilité bras droit',
-        doctorId: '2',
-        createdAt: '2024-01-10T14:30:00Z',
-        updatedAt: '2024-01-10T14:30:00Z'
-      }
-    ];
-    
-    const sampleInjections: Injection[] = [
-      {
-        id: '1',
-        patientId: '1',
-        date: '2024-01-20T14:00:00Z',
-        product: 'Botox',
-        muscles: [
-          { muscleId: '1', dosage: 50, side: 'left' },
-          { muscleId: '2', dosage: 30, side: 'right' }
-        ],
-        guidanceType: ['Échographique'],
-        postInjectionEvents: ['Aucun événement'],
-        notes: 'Injection bien tolérée',
-        doctorId: '2',
-        followUpDate: '2024-02-20'
-      }
-    ];
+    if (user) {
+      const loadData = async () => {
+        try {
+          // Load patients
+          const patientsQuery = user.role === 'admin' 
+            ? collection(db, 'patients')
+            : query(collection(db, 'patients'), where('doctorId', '==', user.id));
+          
+          const patientsSnapshot = await getDocs(patientsQuery);
+          const patientsData = patientsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Patient[];
+          setPatients(patientsData);
 
-    const sampleAppointments: Appointment[] = [
-      {
-        id: '1',
-        patientId: '1',
-        date: '2024-02-20T10:00:00Z',
-        type: 'followup',
-        location: 'service',
-        status: 'scheduled',
-        notes: 'Contrôle post-injection',
-        doctorId: '2'
-      },
-      {
-        id: '2',
-        patientId: '2',
-        date: '2024-01-25T15:00:00Z',
-        type: 'injection',
-        location: 'operating_room',
-        status: 'scheduled',
-        notes: 'Première injection avec sédation',
-        doctorId: '2'
+          // Load injections
+          const injectionsQuery = user.role === 'admin'
+            ? collection(db, 'injections')
+            : query(collection(db, 'injections'), where('doctorId', '==', user.id));
+          
+          const injectionsSnapshot = await getDocs(injectionsQuery);
+          const injectionsData = injectionsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Injection[];
+          setInjections(injectionsData);
+
+          // Load follow-ups
+          const followUpsQuery = user.role === 'admin'
+            ? collection(db, 'followUps')
+            : query(collection(db, 'followUps'), where('doctorId', '==', user.id));
+          
+          const followUpsSnapshot = await getDocs(followUpsQuery);
+          const followUpsData = followUpsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as FollowUp[];
+          setFollowUps(followUpsData);
+
+          // Load appointments
+          const appointmentsQuery = user.role === 'admin'
+            ? collection(db, 'appointments')
+            : query(collection(db, 'appointments'), where('doctorId', '==', user.id));
+          
+          const appointmentsSnapshot = await getDocs(appointmentsQuery);
+          const appointmentsData = appointmentsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Appointment[];
+          setAppointments(appointmentsData);
+
+        } catch (error) {
+          console.error('Error loading data:', error);
+        }
+      };
+
+      loadData();
+    }
+  }, [user]);
+
+  // Auth state listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
+      if (firebaseUser) {
+        try {
+          // Get user data from Firestore
+          const userDoc = await getDocs(query(collection(db, 'users'), where('email', '==', firebaseUser.email)));
+          if (!userDoc.empty) {
+            const userData = userDoc.docs[0].data() as User;
+            setUser({ ...userData, id: firebaseUser.uid });
+          } else {
+            // Create default user data if not exists
+            const defaultUser: User = {
+              id: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              name: firebaseUser.email === 'admin@medical.com' ? 'Dr. Admin' : 'Dr. Martin',
+              role: firebaseUser.email === 'admin@medical.com' ? 'admin' : 'doctor'
+            };
+            await setDoc(doc(db, 'users', firebaseUser.uid), defaultUser);
+            setUser(defaultUser);
+          }
+        } catch (error) {
+          console.error('Error getting user data:', error);
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+        setPatients([]);
+        setInjections([]);
+        setFollowUps([]);
+        setAppointments([]);
       }
-    ];
-    
-    setPatients(samplePatients);
-    setInjections(sampleInjections);
-    setAppointments(sampleAppointments);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Chargement...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <AppContext.Provider
@@ -370,7 +449,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateConfiguration,
         getPatientsByDoctor,
         addUser,
-        getStats
+        getStats,
+        loading
       }}
     >
       {children}
