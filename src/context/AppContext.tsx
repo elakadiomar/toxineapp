@@ -4,7 +4,8 @@ import {
   signInWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
-  createUserWithEmailAndPassword 
+  createUserWithEmailAndPassword,
+  fetchSignInMethodsForEmail
 } from 'firebase/auth';
 import { 
   collection, 
@@ -16,7 +17,8 @@ import {
   query, 
   where, 
   onSnapshot,
-  setDoc 
+  setDoc,
+  getDoc
 } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 
@@ -100,6 +102,59 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     ]
   });
 
+  // Create default users if they don't exist
+  const createDefaultUsers = async () => {
+    try {
+      const defaultUsers = [
+        {
+          email: 'admin@medical.com',
+          password: 'defaultPassword123',
+          name: 'Dr. Admin',
+          role: 'admin' as const
+        },
+        {
+          email: 'doctor@medical.com', 
+          password: 'defaultPassword123',
+          name: 'Dr. Martin',
+          role: 'doctor' as const
+        }
+      ];
+
+      for (const defaultUser of defaultUsers) {
+        try {
+          // Check if user already exists
+          const signInMethods = await fetchSignInMethodsForEmail(auth, defaultUser.email);
+          
+          if (signInMethods.length === 0) {
+            // User doesn't exist, create it
+            const userCredential = await createUserWithEmailAndPassword(
+              auth, 
+              defaultUser.email, 
+              defaultUser.password
+            );
+            
+            // Save user data to Firestore
+            await setDoc(doc(db, 'users', userCredential.user.uid), {
+              id: userCredential.user.uid,
+              email: defaultUser.email,
+              name: defaultUser.name,
+              role: defaultUser.role
+            });
+            
+            console.log(`Created default user: ${defaultUser.email}`);
+          }
+        } catch (error: any) {
+          // If user already exists, that's fine
+          if (error.code !== 'auth/email-already-in-use') {
+            console.error(`Error creating user ${defaultUser.email}:`, error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error creating default users:', error);
+    }
+  };
+
   // Firebase Authentication
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
@@ -107,9 +162,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const firebaseUser = userCredential.user;
       
       // Get user data from Firestore
-      const userDoc = await getDocs(query(collection(db, 'users'), where('email', '==', email)));
-      if (!userDoc.empty) {
-        const userData = userDoc.docs[0].data() as User;
+      const userDocRef = doc(db, 'users', firebaseUser.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data() as User;
         setUser({ ...userData, id: firebaseUser.uid });
         return true;
       } else {
@@ -117,10 +174,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const defaultUser: User = {
           id: firebaseUser.uid,
           email: email,
-          name: email === 'admin@medical.com' ? 'Dr. Admin' : 'Dr. Martin',
-          role: email === 'admin@medical.com' ? 'admin' : 'doctor'
+          name: email.includes('admin') ? 'Dr. Admin' : 'Dr. Martin',
+          role: email.includes('admin') ? 'admin' : 'doctor'
         };
-        await setDoc(doc(db, 'users', firebaseUser.uid), defaultUser);
+        await setDoc(userDocRef, defaultUser);
         setUser(defaultUser);
         return true;
       }
@@ -384,19 +441,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (firebaseUser) {
         try {
           // Get user data from Firestore
-          const userDoc = await getDocs(query(collection(db, 'users'), where('email', '==', firebaseUser.email)));
-          if (!userDoc.empty) {
-            const userData = userDoc.docs[0].data() as User;
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDoc = await getDoc(userDocRef);
+          
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as User;
             setUser({ ...userData, id: firebaseUser.uid });
           } else {
             // Create default user data if not exists
             const defaultUser: User = {
               id: firebaseUser.uid,
               email: firebaseUser.email || '',
-              name: firebaseUser.email === 'admin@medical.com' ? 'Dr. Admin' : 'Dr. Martin',
-              role: firebaseUser.email === 'admin@medical.com' ? 'admin' : 'doctor'
+              name: firebaseUser.email?.includes('admin') ? 'Dr. Admin' : 'Dr. Martin',
+              role: firebaseUser.email?.includes('admin') ? 'admin' : 'doctor'
             };
-            await setDoc(doc(db, 'users', firebaseUser.uid), defaultUser);
+            await setDoc(userDocRef, defaultUser);
             setUser(defaultUser);
           }
         } catch (error) {
@@ -414,6 +473,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     return () => unsubscribe();
+  }, []);
+
+  // Initialize default users on app start
+  useEffect(() => {
+    createDefaultUsers();
   }, []);
 
   if (loading) {
