@@ -3,8 +3,7 @@ import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
-  // Configuration Firebase - remplacez par vos vraies clés
-   apiKey: "AIzaSyC6hTMg0ZqvnulzNaVwfNP-9jJH82mn4Co",
+  apiKey: "AIzaSyC6hTMg0ZqvnulzNaVwfNP-9jJH82mn4Co",
   authDomain: "toxine-v3.firebaseapp.com",
   projectId: "toxine-v3",
   storageBucket: "toxine-v3.firebasestorage.app",
